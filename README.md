@@ -1,6 +1,6 @@
 # Linux LKM File Hiding — Reverse Engineering with Ghidra
 
-> **Unknown kernel module → suspicious behavior → static analysis → understand what it does**
+> **Build and Reverse Engineer a Modern Linux LKM Rootkit**
 
 A small reverse-engineering project focused on investigating a Linux Loadable Kernel Module (LKM) that hides selected files from normal directory listings.
 
@@ -225,8 +225,7 @@ The analysis focused on:
 The symbol list was used to find functions related to module initialization, cleanup, hooking, and directory processing.
 
 ![Ghidra symbols](screenshots/ghidra-symbols.png)
-
----
+Lab note: The symbols in this sample are relatively easy to identify because this is a controlled lab module. An unknown or stripped kernel module may look very different in Ghidra, with functions represented by generic names. In that situation, the analyst has to follow clues such as strings, cross-references, function calls, and control flow to identify suspicious behavior.---
 
 ## Strings
 
@@ -431,28 +430,11 @@ Use an isolated lab or virtual machine and never test kernel-level techniques on
 
 ---
 
-# Final Takeaway
+## A Special Shoutout
 
-The main lesson is not the hiding technique itself.
+Shoutout to [@amdelulu](https://github.com/amdelulu) because after me saying **“I’ll start posting on GitHub”** about 35386 times...
 
-It is the investigation process:
+I finally did it hehe. 
 
-```text
-Unknown module
-      ↓
-Suspicious behavior
-      ↓
-Collect the artifact
-      ↓
-Reverse engineer with Ghidra
-      ↓
-Find the hook
-      ↓
-Trace the code
-      ↓
-Understand the behavior
-      ↓
-Validate the result
-```
+So yeah 
 
-This is a practical workflow for analyzing suspicious Linux kernel modules and understanding what they actually do.
