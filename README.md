@@ -32,7 +32,7 @@ For example:
 ls -la /tmp/test-lkm-rootkit
 ```
 
-But `ls` is only an example. The important part is the **directory-entry data returned to userspace**, not the specific command used to display it.
+NOTE :  `ls` is only an example. The important part is the **directory-entry data returned to userspace**, not the specific command used to display it.
 
 The investigation asked:
 
