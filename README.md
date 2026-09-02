@@ -1,37 +1,141 @@
-# Linux LKM File-Hiding — Reverse Engineering with Ghidra
+# Linux LKM File Hiding — Reverse Engineering with Ghidra
 
-> Educational cybersecurity project focused on analyzing a Linux kernel module that hides selected files from normal directory listings.
+> **Unknown kernel module → suspicious behavior → static analysis → understand what it does**
+
+A small reverse-engineering project focused on investigating a Linux Loadable Kernel Module (LKM) that hides selected files from normal directory listings.
 
 **System:** Kali Linux
-**Kernel:** Linux 6.12.33+kali-amd64
-**Architecture:** x86_64
+**Kernel:** `6.12.33+kali-amd64`
+**Architecture:** `x86_64`
 **Main tool:** Ghidra
-**Technique:** ftrace-based hooking
+**Hooking technique:** ftrace
 
 ---
 
 ## About
 
-This project looks at how a Linux Loadable Kernel Module (LKM) can modify directory listings on a **modern Linux kernel**.
+The investigation started with an **unknown kernel module** running in a controlled Linux lab.
 
-The module used in this project, `lkmdemo.ko`, filters directory entries whose names start with:
+The module was not trusted, so instead of assuming what it did, the goal was to **reverse engineer the compiled `.ko` file and understand its behavior**.
+
+During testing, a file with a name starting with:
 
 ```text
 malicious_file
 ```
 
-The file is not deleted. Instead, the directory entry is removed from the result returned to user space, so it does not appear in a normal directory listing.
+was no longer visible through normal directory-listing tools.
 
-The module uses **ftrace-based hooking** to intercept the relevant directory-entry handling functions. This is particularly relevant on modern Linux kernels, where traditional kernel hooking techniques may no longer be practical or available in the same way as on older kernels.
+For example:
 
-The main purpose of the project is to understand this behavior through reverse engineering with Ghidra.
+```bash
+ls -la /tmp/test-lkm-rootkit
+```
 
+But `ls` is only an example. The important part is the **directory-entry data returned to userspace**, not the specific command used to display it.
+
+The investigation asked:
+
+> **Is the file actually deleted, or is the kernel module filtering it from the directory-listing result?**
 
 ---
 
-## Research Question
+## Investigation Flow
 
-**How can Ghidra be used to identify and understand file-hiding logic inside a Linux kernel module?**
+```text
+Unknown LKM
+    ↓
+Observe suspicious behavior
+    ↓
+Collect the .ko file
+    ↓
+Open it in Ghidra
+    ↓
+Find strings and symbols
+    ↓
+Follow cross-references
+    ↓
+Identify ftrace hook
+    ↓
+Trace directory-entry handling
+    ↓
+Find filename comparison
+    ↓
+Understand the filtering logic
+    ↓
+Compare with runtime behavior
+```
+
+---
+
+## How It Works
+
+The sample uses **ftrace-based hooking** to intercept the relevant kernel functions.
+
+The basic idea is:
+
+```text
+Userspace directory listing
+          ↓
+   Kernel directory path
+          ↓
+      ftrace hook
+          ↓
+   Directory entries
+          ↓
+    Filename check
+          ↓
+"malicious_file" match?
+       /          \
+     yes           no
+      ↓             ↓
+   filter         keep
+   entry           entry
+```
+
+The important distinction is:
+
+```text
+Hidden from directory listing
+            ≠
+       File deleted
+```
+
+The filesystem object may still exist even though it is not returned through the normal directory-enumeration path.
+
+---
+
+## Why Modern Linux?
+
+This project was tested on:
+
+```text
+Linux 6.12.33+kali-amd64
+```
+
+Modern Linux kernels have changed significantly compared with older kernels.
+
+Traditional techniques such as direct system-call table modification are less practical on many modern systems because of kernel changes and hardening.
+
+This makes **ftrace-based function hooking** an interesting technique to study when analyzing suspicious kernel modules.
+
+The exact functions and implementation can also change between kernel versions, so the analysis is tied to the tested environment.
+
+---
+
+## Lab Environment
+
+| Component           | Details              |
+| ------------------- | -------------------- |
+| OS                  | Kali Linux           |
+| Kernel              | `6.12.33+kali-amd64` |
+| Architecture        | `x86_64`             |
+| Compiler            | GCC                  |
+| Build               | GNU Make             |
+| Reverse Engineering | Ghidra               |
+| Module tools        | kmod                 |
+
+The experiment was performed in an isolated lab environment.
 
 ---
 
@@ -57,46 +161,11 @@ lkm-rootkit-reverse-engineering/
 
 ---
 
-## Lab Environment
+# 1. Initial Observation
 
-| Component           | Version / Details  |
-| ------------------- | ------------------ |
-| OS                  | Kali Linux         |
-| Kernel              | 6.12.33+kali-amd64 |
-| Architecture        | x86_64             |
-| Compiler            | GCC                |
-| Build               | GNU Make           |
-| Reverse Engineering | Ghidra             |
-| Module tools        | kmod               |
+The investigation started with an unknown `.ko` module running in the lab.
 
-The experiment was carried out in an isolated lab environment.
-
----
-
-## How It Works
-
-The module uses ftrace to hook the directory-entry handling functions configured in the source code.
-
-The basic flow is:
-
-```text
-Directory listing
-       ↓
-   ftrace hook
-       ↓
-Directory entries
-       ↓
-Filename check
-       ↓
-"malicious_file" match?
-      / \
-    yes  no
-     ↓    ↓
-  remove keep
-   entry entry
-```
-
-For example, a directory might contain:
+A test directory contained:
 
 ```text
 normal_file.txt
@@ -104,207 +173,235 @@ malicious_file_test
 another_file.txt
 ```
 
-After the filtering logic is applied, the targeted entry is no longer shown through the normal directory-listing interface.
-
-This does not mean that the file has been deleted from the filesystem.
-
----
-
-## Building
-
-The required packages can be installed with:
-
-```bash
-sudo apt install -y build-essential libncurses-dev linux-headers-$(uname -r)
-```
-
-Then:
-
-```bash
-cd lkmdemo
-make
-```
-
-This produces:
-
-```text
-lkmdemo.ko
-```
-
-The module was built against the kernel used in the lab:
-
-```text
-6.12.33+kali-amd64
-```
-
----
-
-## Initial Observation
-
-The investigation started with an unfamiliar kernel module, `lkmdemo.ko`, running in the lab environment.
-
-Rather than assuming what the module was doing, the module and its behavior were investigated.
-
-A temporary directory was used for the test:
-
-```text
-/tmp/test-lkm-rootkit
-```
-
-The directory was checked before and after the module was loaded:
+A normal directory-listing command was used to check the contents.
 
 ```bash
 ls -la /tmp/test-lkm-rootkit
 ```
 
-The test file:
+The matching file was visible during the baseline test.
 
-```text
-malicious_file_test
-```
+After the module's behavior was active, the matching entry was no longer shown.
 
-was visible before the filtering behavior was applied and was no longer shown afterwards.
+![Initial observation](screenshots/suspicious-module.png)
 
-![Suspicious module / initial observation](screenshots/suspicious-module.png)
-  
-The behavior raised the question of how the module was able to affect the directory listing.
+At this point, the cause was unknown.
 
-At this stage, the important point was not simply that a file appeared to be hidden. The system was also running an unfamiliar `.ko` module, so the next step was to investigate the module itself.
+Possible explanations included:
 
-This led to the reverse-engineering phase using Ghidra.
+* the file was deleted;
+* the file was renamed;
+* the directory was modified;
+* or the kernel module was filtering the directory entry.
+
+The next step was to investigate the module itself.
 
 ---
 
-## Reverse Engineering with Ghidra
+# 2. Reverse Engineering with Ghidra
 
-The compiled `.ko` file was imported into Ghidra and analysed as an ELF object.
-
-The analysis was used to identify the module's symbols, strings, functions, and control flow.
-
-The investigation initially focused on finding indicators that could explain the observed behavior. In particular, attention was given to references to:
+The compiled module:
 
 ```text
-getdents
-ftrace
-malicious_file
+lkmdemo.ko
 ```
 
-These observations provided a starting point for tracing the module's behavior through the compiled code.
+was imported into Ghidra as an ELF object.
 
-The following sections show how the analysis moved from these initial indicators to the relevant parts of the module.
+The analysis focused on:
 
-### Symbols
+* symbols;
+* strings;
+* cross-references;
+* functions;
+* control flow;
+* ftrace-related code;
+* directory-entry handling.
 
-The symbol view was used to identify functions related to module initialization, cleanup, hook installation, and directory-entry processing.
+---
+
+## Symbols
+
+The symbol list was used to find functions related to module initialization, cleanup, hooking, and directory processing.
 
 ![Ghidra symbols](screenshots/ghidra-symbols.png)
 
-### Strings
+---
 
-The strings view was useful for finding indicators related to the filtering logic.
+## Strings
 
-One of the main strings identified was:
+A useful string found in the module was:
 
 ```text
 malicious_file
 ```
 
-References related to `getdents` and `ftrace` also provided useful indicators for continuing the investigation.
+Other useful indicators included references related to:
+
+```text
+getdents
+getdents64
+ftrace
+```
 
 ![Ghidra strings](screenshots/strings.png)
 
-### Function Graph
+The string alone does not prove the behavior.
 
-The function graph helped trace the relationship between the module initialization code, hook setup, and the filtering logic.
+Its cross-references were followed to see how the code actually uses it.
 
-Following the relevant functions provided a clearer picture of how the module could intercept directory-entry processing and apply its filename filter.
+---
+
+## Function Graph
+
+The function graph was used to follow the control flow from the hook setup to the filtering logic.
 
 ![Function graph](screenshots/function-graph.png)
 
-### Hook Analysis
+The important path was:
 
-The source code configures ftrace hooks for:
+```text
+ftrace setup
+     ↓
+hooked function
+     ↓
+directory entries
+     ↓
+filename check
+     ↓
+filter / keep entry
+```
+
+---
+
+## Hook Analysis
+
+The sample configures ftrace hooks for:
 
 ```text
 __x64_sys_getdents
 __x64_sys_getdents64
 ```
 
-On older Linux systems, techniques such as directly modifying system call tables were commonly discussed for syscall hooking. On modern kernels, those approaches are generally less straightforward due to kernel hardening and changes in kernel internals.
+These functions are part of the directory-entry system-call path on the tested x86-64 system.
 
-In this project, **ftrace provides the mechanism used to intercept the relevant functions** without relying on direct syscall-table modification.
+The important point is that the module is **not hooking the `ls` command itself**.
 
-These hooks were examined during the Ghidra analysis to understand where directory-entry processing is intercepted and how the filename filtering is connected to the observed behavior.
+Instead:
+
+```text
+ls / another userspace tool
+            ↓
+directory enumeration
+            ↓
+kernel
+            ↓
+getdents / getdents64
+            ↓
+ftrace hook
+            ↓
+filtering logic
+```
+
+This means other userspace programs using the same directory-enumeration interface may also be affected.
 
 ![Hook analysis](screenshots/hook-getdents64.png)
 
+---
 
-## Main Flow
+# 3. Reconstructed Behavior
 
-The reverse-engineering analysis connected the initial observation with the implementation inside the module:
+After following the relevant code in Ghidra, the behavior can be summarized as:
 
 ```text
-Unfamiliar .ko module
-        ↓
-Suspicious directory-listing behavior
-        ↓
-Initial investigation
-        ↓
-Ghidra analysis
-        ↓
-getdents / getdents64
-        ↓
-ftrace hooks
-        ↓
-directory entries
-        ↓
-filename comparison
-        ↓
-malicious_file*
-        ↓
-entry filtered
+Directory entries returned
+          ↓
+      Read filename
+          ↓
+Compare filename with filter
+          ↓
+Starts with "malicious_file"?
+       /          \
+     yes           no
+      ↓             ↓
+remove entry     keep entry
 ```
 
-Following this flow in Ghidra made it possible to connect the observed behavior with the relevant functions and strings inside the compiled kernel module.
+The runtime behavior matched this model.
 
 ---
 
-## Findings
+# Findings
 
-| Area               | Finding                                                             |
-| ------------------ | ------------------------------------------------------------------- |
-| Initial behavior   | A matching file was no longer visible in a normal directory listing |
-| File hiding        | Matching directory entries are removed from the returned listing    |
-| Filename indicator | `malicious_file` is visible in the sample                           |
-| ftrace             | Used for the configured kernel hooks                                |
-| getdents           | Relevant to the directory-entry processing path                     |
-| Ghidra             | Used to trace symbols, strings, and control flow                    |
-| Filesystem         | Hiding a directory entry is different from deleting a file          |
-| Detection          | Normal directory listings alone may not provide the full picture    |
-
----
-
-## Defensive Relevance
-
-Although this is a small lab example, the experiment shows why defenders should not rely only on normal directory listings when investigating suspicious activity.
-
-Useful areas to investigate include:
-
-* unexpected kernel modules
-* suspicious `.ko` files
-* unusual ftrace activity
-* kernel logs
-* file integrity
-* endpoint monitoring
-* differences between filesystem information sources
-
-The indicators in this project are specific to the sample and should not be treated as universal rootkit signatures.
+| Finding                  | Result                                          |
+| ------------------------ | ----------------------------------------------- |
+| Unknown module           | `lkmdemo.ko`                                    |
+| Target                   | Directory entries                               |
+| Filename filter          | `malicious_file*`                               |
+| Hooking method           | ftrace                                          |
+| Relevant path            | `getdents` / `getdents64`                       |
+| Reverse-engineering tool | Ghidra                                          |
+| File deletion            | Not required for the hiding behavior            |
+| Runtime result           | Matching entries disappear from normal listings |
 
 ---
 
-## Limitations
+# Defensive Relevance
 
-This was tested on:
+This project shows how an unknown kernel module can change what userspace sees.
+
+A missing file in a normal directory listing should therefore not immediately be treated as proof of deletion.
+
+When investigating suspicious kernel activity, defenders can examine:
+
+* loaded kernel modules;
+* unexpected `.ko` files;
+* module metadata;
+* ftrace activity;
+* kernel logs;
+* filesystem evidence;
+* endpoint telemetry.
+
+The important idea is:
+
+```text
+What userspace sees
+        ↓
+may not always equal
+        ↓
+what actually exists
+```
+
+---
+
+# Building
+
+Install the required packages:
+
+```bash
+sudo apt install -y build-essential libncurses-dev linux-headers-$(uname -r)
+```
+
+Build the module:
+
+```bash
+cd lkmdemo
+make
+```
+
+The build produces:
+
+```text
+lkmdemo.ko
+```
+
+The module should be built and tested only in an isolated, authorized environment.
+
+---
+
+# Limitations
+
+This project was tested on:
 
 ```text
 Kali Linux
@@ -312,16 +409,50 @@ Linux 6.12.33+kali-amd64
 x86_64
 ```
 
-The results may be different on other kernel versions or configurations.
+Kernel internals can change between versions, so the same analysis may produce different results on another kernel.
 
-The filename filter is also intentionally simple because the purpose of the project is to demonstrate the reverse-engineering process rather than create a general-purpose hiding mechanism.
+The filename filter is also intentionally simple:
+
+```text
+malicious_file*
+```
+
+The goal is to demonstrate **reverse engineering and investigation**, not to create a production rootkit.
 
 ---
 
-## Disclaimer
+# Disclaimer
 
-This project is for educational, academic, and authorized cybersecurity research only.
+This project is for educational, defensive, and authorized cybersecurity research.
 
-The module should only be tested in systems where you have permission to do so. It is not intended for use on systems without authorization.
+Kernel modules run with high privileges and can crash or destabilize a system.
 
+Use an isolated lab or virtual machine and never test kernel-level techniques on systems without permission.
 
+---
+
+# Final Takeaway
+
+The main lesson is not the hiding technique itself.
+
+It is the investigation process:
+
+```text
+Unknown module
+      ↓
+Suspicious behavior
+      ↓
+Collect the artifact
+      ↓
+Reverse engineer with Ghidra
+      ↓
+Find the hook
+      ↓
+Trace the code
+      ↓
+Understand the behavior
+      ↓
+Validate the result
+```
+
+This is a practical workflow for analyzing suspicious Linux kernel modules and understanding what they actually do.
